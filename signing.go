@@ -490,7 +490,7 @@ func SignAgent(
 		"type":         "approveAgent",
 		"agentAddress": agentAddress,
 		"agentName":    agentName,
-		"nonce":        nonce,
+		"nonce":        big.NewInt(nonce),
 	}
 
 	// payload_types from Python: only declares fields that are in the original action

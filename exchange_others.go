@@ -741,7 +741,7 @@ func (e *Exchange) ApproveAgent(
 	}
 
 	agentAddress := crypto.PubkeyToAddress(privateKey.PublicKey).Hex()
-	nonce := e.nextNonce() / 1000
+	nonce := e.nextNonce()
 
 	agentName := ""
 	if name != nil {
