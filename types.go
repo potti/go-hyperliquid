@@ -514,61 +514,151 @@ type TransferResponse struct {
 }
 
 type ApprovalResponse struct {
-	Status string `json:"status"`
-	TxHash string `json:"txHash,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Status   string `json:"status"`
+	TxHash   string `json:"txHash,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Response string `json:"response,omitempty"` // Error message from API (newer format)
+}
+
+// GetError returns the error message, checking both Error and Response fields
+func (r *ApprovalResponse) GetError() string {
+	if r.Response != "" {
+		return r.Response
+	}
+	return r.Error
 }
 
 type CreateVaultResponse struct {
-	Status string `json:"status"`
-	Data   string `json:"data,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Status   string `json:"status"`
+	Data     string `json:"data,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Response string `json:"response,omitempty"` // Error message from API (newer format)
+}
+
+// GetError returns the error message, checking both Error and Response fields
+func (r *CreateVaultResponse) GetError() string {
+	if r.Response != "" {
+		return r.Response
+	}
+	return r.Error
 }
 
 type CreateSubAccountResponse struct {
-	Status string      `json:"status"`
-	Data   *SubAccount `json:"data,omitempty"`
-	Error  string      `json:"error,omitempty"`
+	Status   string      `json:"status"`
+	Data     *SubAccount `json:"data,omitempty"`
+	Error    string      `json:"error,omitempty"`
+	Response string      `json:"response,omitempty"` // Error message from API (newer format)
+}
+
+// GetError returns the error message, checking both Error and Response fields
+func (r *CreateSubAccountResponse) GetError() string {
+	if r.Response != "" {
+		return r.Response
+	}
+	return r.Error
 }
 
 type SetReferrerResponse struct {
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
+	Status   string `json:"status"`
+	Error    string `json:"error,omitempty"`
+	Response string `json:"response,omitempty"` // Error message from API (newer format)
+}
+
+// GetError returns the error message, checking both Error and Response fields
+func (r *SetReferrerResponse) GetError() string {
+	if r.Response != "" {
+		return r.Response
+	}
+	return r.Error
 }
 
 type ScheduleCancelResponse struct {
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
+	Status   string `json:"status"`
+	Error    string `json:"error,omitempty"`
+	Response string `json:"response,omitempty"` // Error message from API (newer format)
+}
+
+// GetError returns the error message, checking both Error and Response fields
+func (r *ScheduleCancelResponse) GetError() string {
+	if r.Response != "" {
+		return r.Response
+	}
+	return r.Error
 }
 
 type AgentApprovalResponse struct {
-	Status string `json:"status"`
-	TxHash string `json:"txHash,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Status   string `json:"status"`
+	TxHash   string `json:"txHash,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Response string `json:"response,omitempty"` // Error message from API (newer format)
+}
+
+// GetError returns the error message, checking both Error and Response fields
+func (r *AgentApprovalResponse) GetError() string {
+	if r.Response != "" {
+		return r.Response
+	}
+	return r.Error
 }
 
 type MultiSigConversionResponse struct {
-	Status string `json:"status"`
-	TxHash string `json:"txHash,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Status   string `json:"status"`
+	TxHash   string `json:"txHash,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Response string `json:"response,omitempty"` // Error message from API (newer format)
+}
+
+// GetError returns the error message, checking both Error and Response fields
+func (r *MultiSigConversionResponse) GetError() string {
+	if r.Response != "" {
+		return r.Response
+	}
+	return r.Error
 }
 
 type SpotDeployResponse struct {
-	Status string `json:"status"`
-	TxHash string `json:"txHash,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Status   string `json:"status"`
+	TxHash   string `json:"txHash,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Response string `json:"response,omitempty"` // Error message from API (newer format)
+}
+
+// GetError returns the error message, checking both Error and Response fields
+func (r *SpotDeployResponse) GetError() string {
+	if r.Response != "" {
+		return r.Response
+	}
+	return r.Error
 }
 
 type ValidatorResponse struct {
-	Status string `json:"status"`
-	TxHash string `json:"txHash,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Status   string `json:"status"`
+	TxHash   string `json:"txHash,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Response string `json:"response,omitempty"` // Error message from API (newer format)
+}
+
+// GetError returns the error message, checking both Error and Response fields
+func (r *ValidatorResponse) GetError() string {
+	if r.Response != "" {
+		return r.Response
+	}
+	return r.Error
 }
 
 type MultiSigResponse struct {
-	Status string `json:"status"`
-	TxHash string `json:"txHash,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Status   string `json:"status"`
+	TxHash   string `json:"txHash,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Response string `json:"response,omitempty"` // Error message from API (newer format)
+}
+
+// GetError returns the error message, checking both Error and Response fields
+func (r *MultiSigResponse) GetError() string {
+	if r.Response != "" {
+		return r.Response
+	}
+	return r.Error
 }
 
 type PerpDeployResponse struct {
