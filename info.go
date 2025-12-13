@@ -52,13 +52,13 @@ func NewInfo(
 		}
 	}
 
-	if spotMeta == nil {
-		var err error
-		spotMeta, err = info.SpotMeta(ctx)
-		if err != nil {
-			panic(err)
-		}
-	}
+	// if spotMeta == nil {
+	// 	var err error
+	// 	spotMeta, err = info.SpotMeta(ctx)
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// }
 
 	// Map perp assets
 	for asset, assetInfo := range meta.Universe {
@@ -68,12 +68,12 @@ func NewInfo(
 	}
 
 	// Map spot assets starting at 10000
-	for _, spotInfo := range spotMeta.Universe {
-		asset := spotInfo.Index + spotAssetIndexOffset
-		info.coinToAsset[spotInfo.Name] = asset
-		info.nameToCoin[spotInfo.Name] = spotInfo.Name
-		info.assetToDecimal[asset] = spotMeta.Tokens[spotInfo.Tokens[0]].SzDecimals
-	}
+	// for _, spotInfo := range spotMeta.Universe {
+	// 	asset := spotInfo.Index + spotAssetIndexOffset
+	// 	info.coinToAsset[spotInfo.Name] = asset
+	// 	info.nameToCoin[spotInfo.Name] = spotInfo.Name
+	// 	info.assetToDecimal[asset] = spotMeta.Tokens[spotInfo.Tokens[0]].SzDecimals
+	// }
 
 	return info
 }
