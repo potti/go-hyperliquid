@@ -417,6 +417,20 @@ type UserActiveAssetData struct {
 	MarkPx           string   `json:"markPx"`
 }
 
+// LedgerUpdate represents a non-funding ledger update (deposit, withdrawal, etc.)
+type LedgerUpdate struct {
+	Time  int64             `json:"time"`
+	Hash  string            `json:"hash"`
+	Delta LedgerUpdateDelta `json:"delta"`
+}
+
+// LedgerUpdateDelta represents the delta field in a ledger update
+type LedgerUpdateDelta struct {
+	Type string `json:"type"` // "deposit", "withdrawal", "internalTransfer", "liquidation", "subAccountTransfer", "spotGenesis"
+	Coin string `json:"coin"`
+	Usdc string `json:"usdc"`
+}
+
 type UserVolume struct {
 	Date      string `json:"date"`
 	Exchange  string `json:"exchange"`

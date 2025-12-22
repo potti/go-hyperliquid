@@ -470,6 +470,25 @@ func (i *Info) UserFundingHistory(
 	return result, nil
 }
 
+// UserNonFundingLedgerUpdates retrieves non-funding ledger updates (deposits, withdrawals, etc.)
+func (i *Info) UserNonFundingLedgerUpdates(
+	ctx context.Context,
+	user string,
+	startTime int64,
+	endTime *int64,
+) ([]LedgerUpdate, error) {
+	resp, err := i.postTimeRangeRequest(ctx, "userNonFundingLedgerUpdates", user, startTime, endTime, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []LedgerUpdate
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal ledger updates: %w", err)
+	}
+	return result, nil
+}
+
 func (i *Info) L2Snapshot(ctx context.Context, name string) (*L2Book, error) {
 	resp, err := i.client.post(ctx, "/info", map[string]any{
 		"type": "l2Book",
