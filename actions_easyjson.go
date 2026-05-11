@@ -47,7 +47,7 @@ func easyjsonB97b45a3DecodeGithubComSoniricoGoHyperliquid(in *jlexer.Lexer, out 
 			if in.IsNull() {
 				in.Skip()
 			} else {
-				out.Amount = string(in.String())
+				out.Amount = float64(in.Float64())
 			}
 		case "time":
 			if in.IsNull() {
@@ -82,7 +82,7 @@ func easyjsonB97b45a3EncodeGithubComSoniricoGoHyperliquid(out *jwriter.Writer, i
 	{
 		const prefix string = ",\"amount\":"
 		out.RawString(prefix)
-		out.String(string(in.Amount))
+		out.Float64(float64(in.Amount))
 	}
 	{
 		const prefix string = ",\"time\":"

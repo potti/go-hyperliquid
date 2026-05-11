@@ -694,7 +694,7 @@ func (e *Exchange) WithdrawFromBridge(
 	action := WithdrawFromBridgeAction{
 		Type:        "withdraw3",
 		Destination: destination,
-		Amount:      fmt.Sprintf("%.6f", amount),
+		Amount:      amount,
 		Time:        nonce,
 	}
 

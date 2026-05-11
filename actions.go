@@ -220,10 +220,10 @@ type TokenDelegateAction struct {
 
 // WithdrawFromBridgeAction represents withdraw from bridge action
 type WithdrawFromBridgeAction struct {
-	Type        string `json:"type"        msgpack:"type"`
-	Destination string `json:"destination" msgpack:"destination"`
-	Amount      string `json:"amount"      msgpack:"amount"`
-	Time        int64  `json:"time"        msgpack:"time"`
+	Type        string  `json:"type"        msgpack:"type"`
+	Destination string  `json:"destination" msgpack:"destination"`
+	Amount      float64 `json:"amount"      msgpack:"amount"`
+	Time        int64   `json:"time"        msgpack:"time"`
 }
 
 // ApproveAgentAction represents approve agent action
