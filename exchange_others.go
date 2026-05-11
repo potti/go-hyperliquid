@@ -20,9 +20,14 @@ func (e *Exchange) UpdateLeverage(
 	name string,
 	isCross bool,
 ) (*UserState, error) {
+	asset, ok := e.info.CoinToAsset(name)
+	if !ok {
+		return nil, fmt.Errorf("coin %s not found in info", name)
+	}
+
 	action := UpdateLeverageAction{
 		Type:     "updateLeverage",
-		Asset:    e.info.NameToAsset(name),
+		Asset:    asset,
 		IsCross:  isCross,
 		Leverage: leverage,
 	}
@@ -39,9 +44,14 @@ func (e *Exchange) UpdateIsolatedMargin(
 	amount float64,
 	name string,
 ) (*UserState, error) {
+	asset, ok := e.info.CoinToAsset(name)
+	if !ok {
+		return nil, fmt.Errorf("coin %s not found in info", name)
+	}
+
 	action := UpdateIsolatedMarginAction{
 		Type:  "updateIsolatedMargin",
-		Asset: e.info.NameToAsset(name),
+		Asset: asset,
 		IsBuy: amount > 0,
 		Ntli:  abs(amount),
 	}
@@ -61,7 +71,6 @@ func (e *Exchange) SlippagePrice(
 	slippage float64,
 	px *float64,
 ) (float64, error) {
-	coin := e.info.nameToCoin[name]
 	var price float64
 
 	if px != nil {
@@ -72,14 +81,14 @@ func (e *Exchange) SlippagePrice(
 		if err != nil {
 			return 0, err
 		}
-		if midPriceStr, exists := mids[coin]; exists {
+		if midPriceStr, exists := mids[name]; exists {
 			price = parseFloat(midPriceStr)
 		} else {
-			return 0, fmt.Errorf("could not get mid price for coin: %s", coin)
+			return 0, fmt.Errorf("could not get mid price for coin: %s", name)
 		}
 	}
 
-	asset := e.info.coinToAsset[coin]
+	asset := e.info.coinToAsset[name]
 	isSpot := asset >= 10000
 
 	// Calculate slippage
@@ -114,8 +123,8 @@ func (e *Exchange) ScheduleCancel(
 		Time: scheduleTime,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -138,6 +147,69 @@ func (e *Exchange) ScheduleCancel(
 	return &result, nil
 }
 
+// Reserve reserves request weight capacity on the exchange.
+// Each weight unit costs 0.0005 USDC from Perps balance.
+// This increases address-based rate limits without requiring trading volume.
+func (e *Exchange) Reserve(ctx context.Context, weight int) (*ReserveRequestWeightResponse, error) {
+	// Validation
+	if weight <= 0 {
+		return nil, fmt.Errorf("weight must be greater than 0, got: %d", weight)
+	}
+
+	// Get nonce
+	nonce := e.nextNonce()
+
+	// Create action
+	action := ReserveRequestWeightAction{
+		Type:   "reserveRequestWeight",
+		Weight: weight,
+	}
+
+	// Sign the action
+	sig, err := SignL1Action(
+		e.privateKey,
+		action,
+		"", // No vault address - reserve must be performed by main wallet
+		nonce,
+		e.expiresAfter,
+		e.client.baseURL == MainnetAPIURL,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign reserve action: %w", err)
+	}
+
+	// Post to exchange
+	resp, err := e.postAction(ctx, action, sig, nonce)
+	if err != nil {
+		return nil, fmt.Errorf("failed to post reserve action: %w", err)
+	}
+	// Parse response — the "response" field is polymorphic:
+	// on success it is {"type":"..."}, on error it is a plain string.
+	var raw struct {
+		Status   string          `json:"status"`
+		Response json.RawMessage `json:"response,omitempty"`
+	}
+	if err := json.Unmarshal(resp, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse reserve response: %w", err)
+	}
+	result := ReserveRequestWeightResponse{Status: raw.Status}
+	if len(raw.Response) > 0 {
+		if raw.Status == "ok" {
+			var data ReserveResponseData
+			if err := json.Unmarshal(raw.Response, &data); err == nil {
+				result.Response = &data
+			}
+		} else {
+			var errMsg string
+			if err := json.Unmarshal(raw.Response, &errMsg); err == nil {
+				result.Error = errMsg
+			}
+		}
+	}
+
+	return &result, nil
+}
+
 // SetReferrer sets a referral code
 func (e *Exchange) SetReferrer(ctx context.Context, code string) (*SetReferrerResponse, error) {
 	nonce := e.nextNonce()
@@ -147,10 +219,10 @@ func (e *Exchange) SetReferrer(ctx context.Context, code string) (*SetReferrerRe
 		Code: code,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
-		"", // No vault address for referrer
+		"",
 		nonce,
 		e.expiresAfter,
 		e.client.baseURL == MainnetAPIURL,
@@ -183,10 +255,10 @@ func (e *Exchange) CreateSubAccount(
 		Name: name,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
-		"", // No vault address for sub-account creation
+		"",
 		nonce,
 		e.expiresAfter,
 		e.client.baseURL == MainnetAPIURL,
@@ -220,19 +292,25 @@ func (e *Exchange) UsdClassTransfer(
 		strAmount += " subaccount:" + e.vault
 	}
 
-	action := UsdClassTransferAction{
-		Type:   "usdClassTransfer",
-		Amount: strAmount,
-		ToPerp: toPerp,
-		Nonce:  nonce,
+	action := map[string]any{
+		"amount": strAmount,
+		"toPerp": toPerp,
+		"nonce":  big.NewInt(nonce),
+		"type":   "usdClassTransfer",
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	payloadTypes := []apitypes.Type{
+		{Name: "hyperliquidChain", Type: "string"},
+		{Name: "amount", Type: "string"},
+		{Name: "toPerp", Type: "bool"},
+		{Name: "nonce", Type: "uint64"},
+	}
+
+	sig, err := e.signUserSignedAction(
+		ctx,
 		action,
-		e.vault,
-		nonce,
-		e.expiresAfter,
+		payloadTypes,
+		"HyperliquidTransaction:UsdClassTransfer",
 		e.client.baseURL == MainnetAPIURL,
 	)
 	if err != nil {
@@ -267,10 +345,10 @@ func (e *Exchange) SubAccountTransfer(
 		Usd:            usd,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
-		"", // No vault address
+		"",
 		nonce,
 		e.expiresAfter,
 		e.client.baseURL == MainnetAPIURL,
@@ -307,10 +385,10 @@ func (e *Exchange) VaultUsdTransfer(
 		Usd:          usd,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
-		"", // No vault address
+		"",
 		nonce,
 		e.expiresAfter,
 		e.client.baseURL == MainnetAPIURL,
@@ -347,10 +425,10 @@ func (e *Exchange) CreateVault(
 		InitialUsd:  initialUsd,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
-		"", // No vault address
+		"",
 		nonce,
 		e.expiresAfter,
 		e.client.baseURL == MainnetAPIURL,
@@ -386,10 +464,10 @@ func (e *Exchange) VaultModify(
 		AlwaysCloseOnWithdraw: alwaysCloseOnWithdraw,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
-		"", // No vault address
+		"",
 		nonce,
 		e.expiresAfter,
 		e.client.baseURL == MainnetAPIURL,
@@ -423,10 +501,10 @@ func (e *Exchange) VaultDistribute(
 		Usd:          usd,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
-		"", // No vault address
+		"",
 		nonce,
 		e.expiresAfter,
 		e.client.baseURL == MainnetAPIURL,
@@ -455,19 +533,25 @@ func (e *Exchange) UsdTransfer(
 ) (*TransferResponse, error) {
 	nonce := e.nextNonce()
 
-	action := UsdTransferAction{
-		Type:        "usdSend",
-		Destination: destination,
-		Amount:      formatFloat(amount),
-		Time:        nonce,
+	action := map[string]any{
+		"destination": destination,
+		"amount":      formatFloat(amount),
+		"time":        big.NewInt(nonce),
+		"type":        "usdSend",
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	payloadTypes := []apitypes.Type{
+		{Name: "hyperliquidChain", Type: "string"},
+		{Name: "destination", Type: "string"},
+		{Name: "amount", Type: "string"},
+		{Name: "time", Type: "uint64"},
+	}
+
+	sig, err := e.signUserSignedAction(
+		ctx,
 		action,
-		e.vault,
-		nonce,
-		e.expiresAfter,
+		payloadTypes,
+		"HyperliquidTransaction:UsdSend",
 		e.client.baseURL == MainnetAPIURL,
 	)
 	if err != nil {
@@ -494,20 +578,27 @@ func (e *Exchange) SpotTransfer(
 ) (*TransferResponse, error) {
 	nonce := e.nextNonce()
 
-	action := SpotTransferAction{
-		Type:        "spotSend",
-		Destination: destination,
-		Amount:      formatFloat(amount),
-		Token:       token,
-		Time:        nonce,
+	action := map[string]any{
+		"destination": destination,
+		"amount":      formatFloat(amount),
+		"token":       token,
+		"time":        big.NewInt(nonce),
+		"type":        "spotSend",
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	payloadTypes := []apitypes.Type{
+		{Name: "hyperliquidChain", Type: "string"},
+		{Name: "destination", Type: "string"},
+		{Name: "token", Type: "string"},
+		{Name: "amount", Type: "string"},
+		{Name: "time", Type: "uint64"},
+	}
+
+	sig, err := e.signUserSignedAction(
+		ctx,
 		action,
-		e.vault,
-		nonce,
-		e.expiresAfter,
+		payloadTypes,
+		"HyperliquidTransaction:SpotSend",
 		e.client.baseURL == MainnetAPIURL,
 	)
 	if err != nil {
@@ -535,10 +626,10 @@ func (e *Exchange) UseBigBlocks(ctx context.Context, enable bool) (*ApprovalResp
 		UsingBigBlocks: enable,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
-		"", // No vault address
+		"",
 		nonce,
 		e.expiresAfter,
 		e.client.baseURL == MainnetAPIURL,
@@ -576,8 +667,8 @@ func (e *Exchange) PerpDexClassTransfer(
 		ToPerp: toPerp,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -618,8 +709,8 @@ func (e *Exchange) SubAccountSpotTransfer(
 		Amount:         amount,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -659,8 +750,8 @@ func (e *Exchange) TokenDelegate(
 		Nonce:        nonce,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -691,19 +782,20 @@ func (e *Exchange) WithdrawFromBridge(
 ) (*TransferResponse, error) {
 	nonce := e.nextNonce()
 
-	action := WithdrawFromBridgeAction{
-		Type:        "withdraw3",
-		Destination: destination,
-		Amount:      fmt.Sprintf("%.6f", amount),
-		Time:        nonce,
+	signAction, action := buildWithdrawFromBridgeActions(amount, destination, nonce)
+
+	payloadTypes := []apitypes.Type{
+		{Name: "hyperliquidChain", Type: "string"},
+		{Name: "destination", Type: "string"},
+		{Name: "amount", Type: "string"},
+		{Name: "time", Type: "uint64"},
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
-		action,
-		e.vault,
-		nonce,
-		e.expiresAfter,
+	sig, err := e.signUserSignedAction(
+		ctx,
+		signAction,
+		payloadTypes,
+		"HyperliquidTransaction:Withdraw",
 		e.client.baseURL == MainnetAPIURL,
 	)
 	if err != nil {
@@ -720,6 +812,22 @@ func (e *Exchange) WithdrawFromBridge(
 		return nil, err
 	}
 	return &result, nil
+}
+
+func buildWithdrawFromBridgeActions(amount float64, destination string, nonce int64) (map[string]any, map[string]any) {
+	signAction := map[string]any{
+		"destination": destination,
+		"amount":      formatFloat(amount),
+		"time":        big.NewInt(nonce),
+		"type":        "withdraw3",
+	}
+	action := map[string]any{
+		"destination": destination,
+		"amount":      amount,
+		"time":        big.NewInt(nonce),
+		"type":        "withdraw3",
+	}
+	return signAction, action
 }
 
 // ApproveAgent approves an agent to trade on behalf of the user
@@ -748,14 +856,7 @@ func (e *Exchange) ApproveAgent(
 		agentName = *name
 	}
 
-	// Use SignAgent which does EIP-712 signing (not L1Action)
-	sig, err := SignAgent(
-		e.privateKey,
-		agentAddress,
-		agentName,
-		nonce,
-		e.client.baseURL == MainnetAPIURL,
-	)
+	sig, err := e.signAgent(ctx, agentAddress, agentName, nonce, e.client.baseURL == MainnetAPIURL)
 	if err != nil {
 		return nil, "", err
 	}
@@ -810,8 +911,8 @@ func (e *Exchange) ApproveBuilderFee(
 		{Name: "nonce", Type: "uint64"},
 	}
 
-	sig, err := SignUserSignedAction(
-		e.privateKey,
+	sig, err := e.signUserSignedAction(
+		ctx,
 		action,
 		payloadTypes,
 		"HyperliquidTransaction:ApproveBuilderFee",
@@ -860,8 +961,8 @@ func (e *Exchange) ConvertToMultiSigUser(
 		Nonce:   nonce,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -910,10 +1011,10 @@ func (e *Exchange) SpotDeployRegisterToken(
 		},
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
-		"", // No vault address for spot deploy
+		"",
 		nonce,
 		e.expiresAfter,
 		e.client.baseURL == MainnetAPIURL,
@@ -946,8 +1047,8 @@ func (e *Exchange) SpotDeployUserGenesis(
 		"balances": balances,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -980,8 +1081,8 @@ func (e *Exchange) SpotDeployEnableFreezePrivilege(
 		"type": "spotDeployEnableFreezePrivilege",
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -1016,8 +1117,8 @@ func (e *Exchange) SpotDeployFreezeUser(
 		"userAddress": userAddress,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -1050,8 +1151,8 @@ func (e *Exchange) SpotDeployRevokeFreezePrivilege(
 		"type": "spotDeployRevokeFreezePrivilege",
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -1088,8 +1189,8 @@ func (e *Exchange) SpotDeployGenesis(
 		"dexName":  dexName,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -1126,8 +1227,8 @@ func (e *Exchange) SpotDeployRegisterSpot(
 		"quoteToken": quoteToken,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -1164,8 +1265,8 @@ func (e *Exchange) SpotDeployRegisterHyperliquidity(
 		"tokens": tokens,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -1200,8 +1301,8 @@ func (e *Exchange) SpotDeploySetDeployerTradingFeeShare(
 		"feeShare": feeShare,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -1226,18 +1327,76 @@ func (e *Exchange) SpotDeploySetDeployerTradingFeeShare(
 
 // Perp Deploy Methods
 
-// PerpDeployRegisterAsset registers a new perpetual asset
+// PerpDeployRegisterAsset registers a new perpetual asset on a builder-deployed DEX.
+// Provide schema to also initialize a new dex alongside the asset registration.
 func (e *Exchange) PerpDeployRegisterAsset(
 	ctx context.Context,
-	asset string,
-	perpDexInput PerpDexSchemaInput,
+	dex string,
+	maxGas *int,
+	assetRequest AssetRequest,
+	schema *PerpDexSchemaInput,
 ) (*PerpDeployResponse, error) {
 	nonce := e.nextNonce()
 
-	action := map[string]any{
-		"type":         "perpDeployRegisterAsset",
-		"asset":        asset,
-		"perpDexInput": perpDexInput,
+	action := PerpDeployRegisterAssetAction{
+		Type: "perpDeploy",
+		RegisterAsset: RegisterAsset{
+			MaxGas:       maxGas,
+			AssetRequest: assetRequest,
+			Dex:          dex,
+		},
+	}
+
+	if schema != nil {
+		action.RegisterAsset.Schema = buildSchemaWire(schema)
+	}
+
+	sig, err := e.signL1Action(
+		ctx,
+		action,
+		e.vault,
+		nonce,
+		e.expiresAfter,
+		e.client.baseURL == MainnetAPIURL,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := e.postAction(ctx, action, sig, nonce)
+	if err != nil {
+		return nil, err
+	}
+
+	var result PerpDeployResponse
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// PerpDeployRegisterAsset2 registers a new perpetual asset on a builder-deployed DEX
+// using marginMode instead of onlyIsolated. Provide schema to also initialize a new dex.
+func (e *Exchange) PerpDeployRegisterAsset2(
+	ctx context.Context,
+	dex string,
+	maxGas *int,
+	assetRequest AssetRequest2,
+	schema *PerpDexSchemaInput,
+) (*PerpDeployResponse, error) {
+	nonce := e.nextNonce()
+
+	action := PerpDeployRegisterAsset2Action{
+		Type: "perpDeploy",
+		RegisterAsset2: RegisterAsset2{
+			MaxGas:       maxGas,
+			AssetRequest: assetRequest,
+			Dex:          dex,
+		},
+	}
+
+	if schema != nil {
+		action.RegisterAsset2.Schema = buildSchemaWire(schema)
 	}
 
 	sig, err := SignL1Action(
@@ -1264,18 +1423,32 @@ func (e *Exchange) PerpDeployRegisterAsset(
 	return &result, nil
 }
 
-// PerpDeploySetOracle sets oracle for perpetual asset
-func (e *Exchange) PerpDeploySetOracle(
+func buildSchemaWire(schema *PerpDexSchemaInput) *RegisterAssetSchema {
+	wire := &RegisterAssetSchema{
+		FullName:        schema.FullName,
+		CollateralToken: schema.CollateralToken,
+	}
+	if schema.OracleUpdater != nil {
+		oracleUpdater := strings.ToLower(*schema.OracleUpdater)
+		wire.OracleUpdater = &oracleUpdater
+	}
+	return wire
+}
+
+// PerpHaltTrading halts or unhalts trading for a builder-deployed DEX
+func (e *Exchange) PerpDeployHaltTrading(
 	ctx context.Context,
-	asset string,
-	oracleAddress string,
-) (*SpotDeployResponse, error) {
+	coin string,
+	isHalted bool,
+) (*PerpDeployResponse, error) {
 	nonce := e.nextNonce()
 
-	action := map[string]any{
-		"type":          "perpDeploySetOracle",
-		"asset":         asset,
-		"oracleAddress": oracleAddress,
+	action := PerpDeployHaltTradingAction{
+		Type: "perpDeploy",
+		HaltTrading: HaltTrading{
+			Coin:     coin,
+			IsHalted: isHalted,
+		},
 	}
 
 	sig, err := SignL1Action(
@@ -1295,7 +1468,87 @@ func (e *Exchange) PerpDeploySetOracle(
 		return nil, err
 	}
 
-	var result SpotDeployResponse
+	var result PerpDeployResponse
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// PerpDeploySetOracle sets oracle prices for a builder-deployed DEX
+// This matches the Python SDK's perp_deploy_set_oracle method
+// oraclePxs: map of coin to oracle price string
+// allMarkPxs: list of maps, each map contains coin to mark price string
+// externalPerpPxs: map of coin to external perp price string
+func (e *Exchange) PerpDeploySetOracle(
+	ctx context.Context,
+	dex string,
+	oraclePxs map[string]string,
+	allMarkPxs []map[string]string,
+	externalPerpPxs map[string]string,
+) (*PerpDeployResponse, error) {
+	nonce := e.nextNonce()
+
+	// Sort oracle prices for deterministic ordering
+	oraclePxsWire := make([][]string, 0, len(oraclePxs))
+	for coin, px := range oraclePxs {
+		oraclePxsWire = append(oraclePxsWire, []string{coin, px})
+	}
+	sort.Slice(oraclePxsWire, func(i, j int) bool {
+		return oraclePxsWire[i][0] < oraclePxsWire[j][0]
+	})
+
+	// Sort mark prices - each element is a list of [coin, px] pairs
+	markPxsWire := make([][][]string, 0, len(allMarkPxs))
+	for _, markPxs := range allMarkPxs {
+		markPxList := make([][]string, 0, len(markPxs))
+		for coin, px := range markPxs {
+			markPxList = append(markPxList, []string{coin, px})
+		}
+		sort.Slice(markPxList, func(i, j int) bool {
+			return markPxList[i][0] < markPxList[j][0]
+		})
+		markPxsWire = append(markPxsWire, markPxList)
+	}
+
+	// Sort external perp prices
+	externalPerpPxsWire := make([][]string, 0, len(externalPerpPxs))
+	for coin, px := range externalPerpPxs {
+		externalPerpPxsWire = append(externalPerpPxsWire, []string{coin, px})
+	}
+	sort.Slice(externalPerpPxsWire, func(i, j int) bool {
+		return externalPerpPxsWire[i][0] < externalPerpPxsWire[j][0]
+	})
+
+	action := PerpDeploySetOracleAction{
+		Type: "perpDeploy",
+		SetOracle: SetOracle{
+			Dex:             dex,
+			OraclePxs:       oraclePxsWire,
+			MarkPxs:         markPxsWire,
+			ExternalPerpPxs: externalPerpPxsWire,
+		},
+	}
+
+	sig, err := e.signL1Action(
+		ctx,
+		action,
+		e.vault,
+		nonce,
+		e.expiresAfter,
+		e.client.baseURL == MainnetAPIURL,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := e.postAction(ctx, action, sig, nonce)
+	if err != nil {
+		return nil, err
+	}
+
+	var result PerpDeployResponse
 	if err := json.Unmarshal(resp, &result); err != nil {
 		return nil, err
 	}
@@ -1312,8 +1565,8 @@ func (e *Exchange) CSignerUnjailSelf(ctx context.Context) (*ValidatorResponse, e
 		"type": "cSignerUnjailSelf",
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -1344,8 +1597,8 @@ func (e *Exchange) CSignerJailSelf(ctx context.Context) (*ValidatorResponse, err
 		"type": "cSignerJailSelf",
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -1380,8 +1633,8 @@ func (e *Exchange) CSignerInner(
 		"innerAction": innerAction,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -1418,8 +1671,8 @@ func (e *Exchange) CValidatorRegister(
 		"validatorProfile": validatorProfile,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -1454,8 +1707,8 @@ func (e *Exchange) CValidatorChangeProfile(
 		"newProfile": newProfile,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -1486,8 +1739,8 @@ func (e *Exchange) CValidatorUnregister(ctx context.Context) (*ValidatorResponse
 		"type": "cValidatorUnregister",
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -1525,8 +1778,8 @@ func (e *Exchange) MultiSig(
 		"signatures": signatures,
 	}
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		multiSigAction,
 		e.vault,
 		nonce,

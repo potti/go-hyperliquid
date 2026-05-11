@@ -91,6 +91,7 @@ func main() {
         "vault-address",
         "account-address",
         nil,    // SpotMeta will be fetched automatically
+        nil,    // PerpDexs will be fetched automatically
     )
 
     // Place a limit order
@@ -185,6 +186,29 @@ Thanks to all the people who have contributed to this project! 🎉
                 </a>
             </td>
             <td align="center">
+                <a href="https://github.com/coder-ishan">
+                    <img src="https://avatars.githubusercontent.com/u/59679369?v=4" width="100;" alt="coder-ishan"/>
+                    <br />
+                    <sub><b>Ishan Singh</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/KILLY000">
+                    <img src="https://avatars.githubusercontent.com/u/138504730?v=4" width="100;" alt="KILLY000"/>
+                    <br />
+                    <sub><b>Vernon Stokes</b></sub>
+                </a>
+            </td>
+		</tr>
+		<tr>
+            <td align="center">
+                <a href="https://github.com/hail100">
+                    <img src="https://avatars.githubusercontent.com/u/7278395?v=4" width="100;" alt="hail100"/>
+                    <br />
+                    <sub><b>hail100</b></sub>
+                </a>
+            </td>
+            <td align="center">
                 <a href="https://github.com/Debuggedd">
                     <img src="https://avatars.githubusercontent.com/u/16706921?v=4" width="100;" alt="Debuggedd"/>
                     <br />
@@ -198,8 +222,20 @@ Thanks to all the people who have contributed to this project! 🎉
                     <sub><b>Levan</b></sub>
                 </a>
             </td>
-		</tr>
-		<tr>
+            <td align="center">
+                <a href="https://github.com/boyi">
+                    <img src="https://avatars.githubusercontent.com/u/1566932?v=4" width="100;" alt="boyi"/>
+                    <br />
+                    <sub><b>boyi</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/ivaaaan">
+                    <img src="https://avatars.githubusercontent.com/u/10375456?v=4" width="100;" alt="ivaaaan"/>
+                    <br />
+                    <sub><b>Ivan</b></sub>
+                </a>
+            </td>
             <td align="center">
                 <a href="https://github.com/andrew-malikov">
                     <img src="https://avatars.githubusercontent.com/u/35894527?v=4" width="100;" alt="andrew-malikov"/>
@@ -207,11 +243,20 @@ Thanks to all the people who have contributed to this project! 🎉
                     <sub><b>Andrew Malikov</b></sub>
                 </a>
             </td>
+		</tr>
+		<tr>
             <td align="center">
                 <a href="https://github.com/freeeverett">
                     <img src="https://avatars.githubusercontent.com/u/54989739?v=4" width="100;" alt="freeeverett"/>
                     <br />
                     <sub><b>Everett</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/07Vaishnavi-Singh">
+                    <img src="https://avatars.githubusercontent.com/u/100015197?v=4" width="100;" alt="07Vaishnavi-Singh"/>
+                    <br />
+                    <sub><b>Vaiz_07</b></sub>
                 </a>
             </td>
             <td align="center">
@@ -229,10 +274,26 @@ Thanks to all the people who have contributed to this project! 🎉
                 </a>
             </td>
             <td align="center">
+                <a href="https://github.com/daatsuka">
+                    <img src="https://avatars.githubusercontent.com/u/92530585?v=4" width="100;" alt="daatsuka"/>
+                    <br />
+                    <sub><b>daatsuka</b></sub>
+                </a>
+            </td>
+            <td align="center">
                 <a href="https://github.com/feeeei">
                     <img src="https://avatars.githubusercontent.com/u/8032930?v=4" width="100;" alt="feeeei"/>
                     <br />
                     <sub><b>feeeei</b></sub>
+                </a>
+            </td>
+		</tr>
+		<tr>
+            <td align="center">
+                <a href="https://github.com/tpkeeper">
+                    <img src="https://avatars.githubusercontent.com/u/7260146?v=4" width="100;" alt="tpkeeper"/>
+                    <br />
+                    <sub><b>tpkeeper</b></sub>
                 </a>
             </td>
             <td align="center">

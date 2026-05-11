@@ -10,11 +10,11 @@ import (
 )
 
 func TestMetaAndAssetCtxs(t *testing.T) {
-	info := NewInfo(context.Background(), MainnetAPIURL, true, nil, nil)
+	info := NewInfo(context.Background(), MainnetAPIURL, true, nil, nil, nil)
 
 	initRecorder(t, false, "MetaAndAssetCtxs")
 
-	res, err := info.MetaAndAssetCtxs(context.TODO())
+	res, err := info.MetaAndAssetCtxs(context.TODO(), MetaAndAssetCtxsParams{})
 	t.Logf("res: %+v", res)
 	t.Logf("err: %v", err)
 
@@ -22,17 +22,29 @@ func TestMetaAndAssetCtxs(t *testing.T) {
 
 	// Verify the response structure
 	require.NotNil(t, res)
-	require.NotNil(t, res.Meta.Universe)
-	require.NotNil(t, res.Meta.MarginTables)
+	require.NotNil(
+		t,
+		res.Meta.Universe, //nolint:staticcheck // Meta is embedded, but explicit access is clearer
+	)
+	require.NotNil(
+		t,
+		res.Meta.MarginTables, //nolint:staticcheck // Meta is embedded, but explicit access is clearer
+	)
 	require.NotNil(t, res.Ctxs)
 
 	// Verify we have at least one asset in universe
-	require.Greater(t, len(res.Meta.Universe), 0)
+	require.Greater(
+		t,
+		len(
+			res.Meta.Universe, //nolint:staticcheck // Meta is embedded, but explicit access is clearer
+		),
+		0,
+	)
 	require.NotEmpty(t, res.Meta.Universe[0].Name)
 
 	// Test specific known assets from the cassette data
 	var btcFound, ethFound bool
-	for _, asset := range res.Meta.Universe {
+	for _, asset := range res.Meta.Universe { //nolint:staticcheck // Meta is embedded, but explicit access is clearer
 		if asset.Name == "BTC" {
 			btcFound = true
 			require.Equal(t, 5, asset.SzDecimals)
@@ -50,14 +62,20 @@ func TestMetaAndAssetCtxs(t *testing.T) {
 	require.True(t, ethFound, "ETH asset should be present in universe")
 
 	// Verify we have at least one margin table
-	require.Greater(t, len(res.Meta.MarginTables), 0)
+	require.Greater(
+		t,
+		len(
+			res.Meta.MarginTables, //nolint:staticcheck // Meta is embedded, but explicit access is clearer
+		),
+		0,
+	)
 	require.GreaterOrEqual(t, res.Meta.MarginTables[0].ID, 0)
 
 	// Verify we have at least one margin tier
 	require.Greater(t, len(res.Meta.MarginTables[0].MarginTiers), 0)
 
 	// Test specific margin table structure
-	for _, marginTable := range res.Meta.MarginTables {
+	for _, marginTable := range res.Meta.MarginTables { //nolint:staticcheck // Meta is embedded, but explicit access is clearer
 		require.NotNil(t, marginTable)
 		require.Greater(t, len(marginTable.MarginTiers), 0)
 		for _, tier := range marginTable.MarginTiers {
@@ -69,10 +87,50 @@ func TestMetaAndAssetCtxs(t *testing.T) {
 	// Verify we have at least one context
 	require.Greater(t, len(res.Ctxs), 0)
 	require.NotEmpty(t, res.Ctxs[0].MarkPx)
+
+	// Test with explicit empty dex (should be same as default)
+	emptyDex := ""
+	res2, err := info.MetaAndAssetCtxs(context.TODO(), MetaAndAssetCtxsParams{Dex: &emptyDex})
+	require.NoError(t, err)
+	require.NotNil(t, res2)
+	require.Greater(
+		t,
+		len(
+			res2.Meta.Universe, //nolint:staticcheck // Meta is embedded, but explicit access is clearer
+		),
+		0,
+	)
+	require.Greater(t, len(res2.Ctxs), 0)
+
+	// Test with explicit dex value
+	xyzDex := "xyz"
+	res3, err := info.MetaAndAssetCtxs(context.TODO(), MetaAndAssetCtxsParams{Dex: &xyzDex})
+	require.NoError(t, err)
+	require.NotNil(t, res3)
+	require.Greater(
+		t,
+		len(
+			res3.Meta.Universe, //nolint:staticcheck // Meta is embedded, but explicit access is clearer
+		),
+		0,
+	)
+	require.Greater(t, len(res3.Ctxs), 0)
+
+	var xyzTslaFound bool
+	for _, asset := range res3.Meta.Universe { //nolint:staticcheck // Meta is embedded, but explicit access is clearer
+		if asset.Name == "xyz:TSLA" {
+			xyzTslaFound = true
+			require.Equal(t, 3, asset.SzDecimals)
+			require.Equal(t, 10, asset.MaxLeverage)
+			require.Equal(t, 10, asset.MarginTableId)
+			break
+		}
+	}
+	require.True(t, xyzTslaFound, "xyz:TSLA asset should be present in universe")
 }
 
 func TestSpotMetaAndAssetCtxs(t *testing.T) {
-	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil)
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
 
 	initRecorder(t, false, "SpotMetaAndAssetCtxs")
 
@@ -135,7 +193,7 @@ func TestSpotMetaAndAssetCtxs(t *testing.T) {
 }
 
 func TestMeta(t *testing.T) {
-	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil)
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
 
 	initRecorder(t, false, "Meta")
 
@@ -185,7 +243,7 @@ func TestMeta(t *testing.T) {
 }
 
 func TestSpotMeta(t *testing.T) {
-	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil)
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
 
 	initRecorder(t, false, "SpotMeta")
 
@@ -242,6 +300,52 @@ func TestSpotMeta(t *testing.T) {
 	require.True(t, purrTokenFound, "PURR token should be present in tokens")
 }
 
+func TestAllPerpMetas(t *testing.T) {
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
+	result, err := info.AllPerpMetas(context.TODO())
+	t.Logf("res: %+v", result)
+	t.Logf("err: %v", err)
+
+	require.NoError(t, err)
+
+	// Verify we have at least one meta
+	require.Greater(t, len(result), 0)
+
+	res := result[0]
+	// Verify we have at least one asset in universe
+	require.Greater(t, len(res.Universe), 0)
+	require.NotEmpty(t, res.Universe[0].Name)
+
+	// Test specific known assets from the cassette data
+	var btcFound, ethFound bool
+	for _, asset := range res.Universe {
+		if asset.Name == "BTC" {
+			btcFound = true
+			require.Equal(t, 5, asset.SzDecimals)
+		}
+		if asset.Name == "ETH" {
+			ethFound = true
+			require.Equal(t, 4, asset.SzDecimals)
+		}
+	}
+	require.True(t, btcFound, "BTC asset should be present in universe")
+	require.True(t, ethFound, "ETH asset should be present in universe")
+
+	// Verify we have at least one margin table
+	require.Greater(t, len(res.MarginTables), 0)
+	require.GreaterOrEqual(t, res.MarginTables[0].ID, 0)
+
+	// Test specific margin table structure
+	for _, marginTable := range res.MarginTables {
+		require.NotNil(t, marginTable)
+		require.Greater(t, len(marginTable.MarginTiers), 0)
+		for _, tier := range marginTable.MarginTiers {
+			require.NotEmpty(t, tier.LowerBound)
+			require.Greater(t, tier.MaxLeverage, 0)
+		}
+	}
+}
+
 func TestQueryOrderByOid(t *testing.T) {
 	type tc struct {
 		name         string
@@ -254,7 +358,7 @@ func TestQueryOrderByOid(t *testing.T) {
 		useTestnet   bool
 	}
 
-	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil)
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
 
 	cases := []tc{
 		{
@@ -355,7 +459,7 @@ func TestQueryOrderByOid(t *testing.T) {
 
 			var infoInstance *Info
 			if tc.useTestnet {
-				infoInstance = NewInfo(context.TODO(), TestnetAPIURL, true, nil, nil)
+				infoInstance = NewInfo(context.TODO(), TestnetAPIURL, true, nil, nil, nil)
 			} else {
 				infoInstance = info
 			}
@@ -407,7 +511,7 @@ func TestUserFillsByTime(t *testing.T) {
 		useTestnet   bool
 	}
 
-	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil)
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
 
 	cases := []tc{
 		{
@@ -473,7 +577,7 @@ func TestUserFillsByTime(t *testing.T) {
 
 			var infoInstance *Info
 			if tc.useTestnet {
-				infoInstance = NewInfo(context.TODO(), TestnetAPIURL, true, nil, nil)
+				infoInstance = NewInfo(context.TODO(), TestnetAPIURL, true, nil, nil, nil)
 			} else {
 				infoInstance = info
 			}
@@ -523,7 +627,7 @@ func TestSpotUserState(t *testing.T) {
 		useTestnet   bool
 	}
 
-	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil)
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
 
 	cases := []tc{
 		{
@@ -566,7 +670,7 @@ func TestSpotUserState(t *testing.T) {
 
 			var infoInstance *Info
 			if tc.useTestnet {
-				infoInstance = NewInfo(context.TODO(), TestnetAPIURL, true, nil, nil)
+				infoInstance = NewInfo(context.TODO(), TestnetAPIURL, true, nil, nil, nil)
 			} else {
 				infoInstance = info
 			}
@@ -612,7 +716,7 @@ func TestUserActiveAssetData(t *testing.T) {
 		useTestnet   bool
 	}
 
-	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil)
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
 
 	cases := []tc{
 		{
@@ -642,7 +746,7 @@ func TestUserActiveAssetData(t *testing.T) {
 
 			var infoInstance *Info
 			if tc.useTestnet {
-				infoInstance = NewInfo(context.TODO(), TestnetAPIURL, true, nil, nil)
+				infoInstance = NewInfo(context.TODO(), TestnetAPIURL, true, nil, nil, nil)
 			} else {
 				infoInstance = info
 			}
@@ -670,7 +774,7 @@ func TestUserActiveAssetData(t *testing.T) {
 }
 
 func TestTokenDetails(t *testing.T) {
-	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil)
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
 
 	type tc struct {
 		name    string
@@ -699,4 +803,222 @@ func TestTokenDetails(t *testing.T) {
 			require.Equal(t, tc.coin, resp.Name)
 		})
 	}
+}
+
+func TestPerpDexs(t *testing.T) {
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
+
+	initRecorder(t, false, "PerpDexs")
+
+	res, err := info.PerpDexs(context.TODO())
+	t.Logf("res: %+v", res)
+	t.Logf("err: %v", err)
+
+	require.NoError(t, err)
+	require.NotNil(t, res)
+
+	// PerpDexs returns a MixedArray where first element is null (default dex)
+	// and subsequent elements are PerpDex objects
+	require.Greater(t, len(res), 0)
+
+	// First element should be null (default dex)
+	if len(res) > 0 {
+		firstType := res[0].Type()
+		// First element can be null or an object
+		require.Contains(t, []string{"null", "object"}, firstType)
+	}
+}
+
+func TestMetaWithDex(t *testing.T) {
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
+
+	initRecorder(t, false, "Meta_WithDex")
+
+	// Test with default dex (empty string)
+	res1, err := info.Meta(context.TODO())
+	require.NoError(t, err)
+	require.NotNil(t, res1)
+	require.Greater(t, len(res1.Universe), 0)
+
+	// Test with explicit empty dex (should be same as default)
+	res2, err := info.Meta(context.TODO(), "")
+	require.NoError(t, err)
+	require.NotNil(t, res2)
+	require.Equal(t, len(res1.Universe), len(res2.Universe))
+}
+
+func TestUserStateWithDex(t *testing.T) {
+	// Use a known test address
+	testAddress := "0xcd5051944f780a621ee62e39e493c489668acf4d"
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
+
+	initRecorder(t, false, "UserState_WithDex")
+
+	// Test with default dex (empty string)
+	res1, err := info.UserState(context.TODO(), testAddress)
+	require.NoError(t, err)
+	require.NotNil(t, res1)
+
+	// Test with explicit empty dex (should be same as default)
+	res2, err := info.UserState(context.TODO(), testAddress, "")
+	require.NoError(t, err)
+	require.NotNil(t, res2)
+	require.Equal(t, res1.MarginSummary.AccountValue, res2.MarginSummary.AccountValue)
+}
+
+func TestAllMidsWithDex(t *testing.T) {
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
+
+	initRecorder(t, false, "AllMids_WithDex")
+
+	// Test with default dex (empty string)
+	res1, err := info.AllMids(context.TODO())
+	require.NoError(t, err)
+	require.NotNil(t, res1)
+	require.Greater(t, len(res1), 0)
+
+	// Test with explicit empty dex (should be same as default)
+	res2, err := info.AllMids(context.TODO(), "")
+	require.NoError(t, err)
+	require.NotNil(t, res2)
+	require.Equal(t, len(res1), len(res2))
+}
+
+func TestOpenOrdersWithDex(t *testing.T) {
+	// Use a known test address
+	testAddress := "0xcd5051944f780a621ee62e39e493c489668acf4d"
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
+
+	initRecorder(t, false, "OpenOrders_WithDex")
+
+	// Test with default dex (empty string)
+	res1, err := info.OpenOrders(context.TODO(), testAddress)
+	require.NoError(t, err)
+	require.NotNil(t, res1)
+
+	// Test with explicit empty dex (should be same as default)
+	res2, err := info.OpenOrders(context.TODO(), testAddress, "")
+	require.NoError(t, err)
+	require.NotNil(t, res2)
+	require.Equal(t, len(res1), len(res2))
+}
+
+func TestFrontendOpenOrdersWithDex(t *testing.T) {
+	// Use a known test address
+	testAddress := "0xcd5051944f780a621ee62e39e493c489668acf4d"
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
+
+	initRecorder(t, false, "FrontendOpenOrders_WithDex")
+
+	// Test with default dex (empty string)
+	res1, err := info.FrontendOpenOrders(context.TODO(), testAddress)
+	require.NoError(t, err)
+	require.NotNil(t, res1)
+
+	// Test with explicit empty dex (should be same as default)
+	res2, err := info.FrontendOpenOrders(context.TODO(), testAddress, "")
+	require.NoError(t, err)
+	require.NotNil(t, res2)
+	require.Equal(t, len(res1), len(res2))
+}
+
+func TestPerpDexLimits(t *testing.T) {
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
+
+	// First get available DEXs
+	initRecorder(t, false, "PerpDexs_ForLimits")
+	dexs, err := info.PerpDexs(context.TODO())
+	require.NoError(t, err)
+
+	// Find a non-null DEX (skip the first one which is null/default)
+	var testDex string
+	for i, dex := range dexs {
+		if i == 0 {
+			continue // Skip first (default dex)
+		}
+		if dex.Type() == "object" {
+			var perpDex PerpDex
+			if err := dex.Parse(&perpDex); err == nil && perpDex.Name != "" {
+				testDex = perpDex.Name
+				break
+			}
+		}
+	}
+
+	// Only test if we have a builder-deployed DEX
+	if testDex != "" {
+		initRecorder(t, false, "PerpDexLimits")
+
+		res, err := info.PerpDexLimits(context.TODO(), testDex)
+		t.Logf("res: %+v", res)
+		t.Logf("err: %v", err)
+
+		require.NoError(t, err)
+		require.NotNil(t, res)
+		require.NotEmpty(t, res.TotalOiCap)
+		require.NotEmpty(t, res.OiSzCapPerPerp)
+		require.NotEmpty(t, res.MaxTransferNtl)
+	} else {
+		t.Skip("No builder-deployed DEX available for testing")
+	}
+}
+
+func TestPerpDexStatus(t *testing.T) {
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
+
+	// First get available DEXs to test with a specific DEX
+	initRecorder(t, false, "PerpDexs_ForStatus")
+	dexs, err := info.PerpDexs(context.TODO())
+	require.NoError(t, err)
+
+	// Find a non-null DEX
+	var testDex string
+	for i, dex := range dexs {
+		if i == 0 {
+			continue // Skip first (default dex)
+		}
+		if dex.Type() == "object" {
+			var perpDex PerpDex
+			if err := dex.Parse(&perpDex); err == nil && perpDex.Name != "" {
+				testDex = perpDex.Name
+				break
+			}
+		}
+	}
+
+	// Test with specific DEX if available
+	if testDex != "" {
+		initRecorder(t, false, "PerpDexStatus_WithDex")
+
+		res2, err := info.PerpDexStatus(context.TODO(), testDex)
+		require.NoError(t, err)
+		require.NotNil(t, res2)
+		require.NotEmpty(t, res2.TotalNetDeposit)
+	}
+}
+
+func TestPerpDeployAuctionStatus(t *testing.T) {
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
+
+	initRecorder(t, false, "PerpDeployAuctionStatus")
+
+	res, err := info.PerpDeployAuctionStatus(context.TODO())
+	t.Logf("res: %+v", res)
+	t.Logf("err: %v", err)
+
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.Greater(t, res.StartTimeSeconds, int64(0))
+	require.Greater(t, res.DurationSeconds, int64(0))
+	require.NotEmpty(t, res.StartGas)
+	require.NotEmpty(t, res.CurrentGas)
+}
+
+func TestPerpDexLimits_RequiresNonEmptyDex(t *testing.T) {
+	info := NewInfo(context.TODO(), MainnetAPIURL, true, nil, nil, nil)
+
+	// PerpDexLimits should fail with empty dex
+	_, err := info.PerpDexLimits(context.TODO(), "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "dex parameter is required")
 }

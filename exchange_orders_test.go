@@ -43,6 +43,7 @@ func newExchange(key, url string) (*Exchange, error) {
 		"",
 		accountAddr,
 		nil, // SpotMeta will be fetched automatically
+		nil, // PerpDexs will be fetched automatically
 	)
 
 	return exchange, nil
@@ -173,7 +174,7 @@ func TestOrders(t *testing.T) {
 		record       bool
 	}
 
-	loadEnvClean(".env.testnet")
+	_ = loadEnvClean(".env.testnet")
 
 	key := ent.Str("HL_PRIVATE_KEY", "")
 	// t.Logf("Using private key: %s", key)

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"sync/atomic"
 	"time"
+
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 )
 
 type Exchange struct {
@@ -14,9 +16,14 @@ type Exchange struct {
 	privateKey   *ecdsa.PrivateKey
 	vault        string
 	accountAddr  string
+	dex          string
 	info         *Info
 	expiresAfter *int64
 	lastNonce    atomic.Int64
+
+	l1Signer         L1ActionSigner
+	userSignedSigner UserSignedActionSigner
+	agentSigner      AgentSigner
 
 	clientOpts []ClientOpt
 	infoOpts   []InfoOpt
@@ -29,6 +36,7 @@ func NewExchange(
 	meta *Meta,
 	vaultAddr, accountAddr string,
 	spotMeta *SpotMeta,
+	perpDexs *MixedArray,
 	opts ...ExchangeOpt,
 ) *Exchange {
 	ex := &Exchange{
@@ -47,7 +55,7 @@ func NewExchange(
 	}
 
 	ex.client = newClient(baseURL, ex.clientOpts...)
-	ex.info = NewInfo(ctx, baseURL, true, meta, spotMeta, ex.infoOpts...)
+	ex.info = NewInfo(ctx, baseURL, true, meta, spotMeta, perpDexs, ex.infoOpts...)
 
 	return ex
 }
@@ -76,6 +84,11 @@ func (e *Exchange) Info() *Info {
 	return e.info
 }
 
+// PerpDex returns the configured builder perp dex name (e.g. "flx"), or empty string for default dex.
+func (e *Exchange) PerpDex() string {
+	return e.dex
+}
+
 // SetExpiresAfter sets the expiration time for actions
 // If expiresAfter is nil, actions will not have an expiration time
 // If expiresAfter is set, actions will include this expiration nonce
@@ -89,12 +102,57 @@ func (e *Exchange) SetLastNonce(n int64) {
 	e.lastNonce.Store(n)
 }
 
+func (e *Exchange) signL1Action(
+	ctx context.Context,
+	action any,
+	vault string,
+	ts int64,
+	exp *int64,
+	mainnet bool,
+) (SignatureResult, error) {
+	if e.l1Signer != nil {
+		return e.l1Signer.SignL1Action(ctx, action, vault, ts, exp, mainnet)
+	}
+	return SignL1Action(e.privateKey, action, vault, ts, exp, mainnet)
+}
+
+func (e *Exchange) signUserSignedAction(
+	ctx context.Context,
+	action map[string]any,
+	payloadTypes []apitypes.Type,
+	primaryType string,
+	mainnet bool,
+) (SignatureResult, error) {
+	if e.userSignedSigner != nil {
+		return e.userSignedSigner.SignUserSignedAction(
+			ctx,
+			action,
+			payloadTypes,
+			primaryType,
+			mainnet,
+		)
+	}
+	return SignUserSignedAction(e.privateKey, action, payloadTypes, primaryType, mainnet)
+}
+
+func (e *Exchange) signAgent(
+	ctx context.Context,
+	agentAddress, agentName string,
+	nonce int64,
+	mainnet bool,
+) (SignatureResult, error) {
+	if e.agentSigner != nil {
+		return e.agentSigner.SignAgent(ctx, agentAddress, agentName, nonce, mainnet)
+	}
+	return SignAgent(e.privateKey, agentAddress, agentName, nonce, mainnet)
+}
+
 // executeAction executes an action and unmarshals the response into the given result
 func (e *Exchange) executeAction(ctx context.Context, action, result any) error {
 	nonce := e.nextNonce()
 
-	sig, err := SignL1Action(
-		e.privateKey,
+	sig, err := e.signL1Action(
+		ctx,
 		action,
 		e.vault,
 		nonce,
@@ -150,12 +208,12 @@ func (e *Exchange) postAction(
 	}
 
 	// Debug logging
-	if e.debug {
-		//if jsonPayload, err := json.MarshalIndent(payload, "", "  "); err == nil {
-		//	println("=== OUTGOING EXCHANGE PAYLOAD ===")
-		//	println(string(jsonPayload))
-		//	println("=================================")
-		//}
+	if e.debug { //nolint:staticcheck // Empty branch for future debugging
+		// if jsonPayload, err := json.MarshalIndent(payload, "", "  "); err == nil {
+		// 	println("=== OUTGOING EXCHANGE PAYLOAD ===")
+		// 	println(string(jsonPayload))
+		// 	println("=================================")
+		// }
 	}
 
 	return e.client.post(ctx, "/exchange", payload)

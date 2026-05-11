@@ -1,5 +1,9 @@
 package hyperliquid
 
+import (
+	json "encoding/json"
+)
+
 //go:generate easyjson -all
 
 type Side string
@@ -62,8 +66,9 @@ type MarginTable struct {
 }
 
 type Meta struct {
-	Universe     []AssetInfo   `json:"universe"`
-	MarginTables []MarginTable `json:"marginTables"`
+	Universe        []AssetInfo   `json:"universe"`
+	MarginTables    []MarginTable `json:"marginTables"`
+	CollateralToken int           `json:"collateralToken"`
 }
 
 type AssetCtx struct {
@@ -77,6 +82,12 @@ type AssetCtx struct {
 	MidPx        string   `json:"midPx,omitempty"`
 	ImpactPxs    []string `json:"impactPxs"`
 	DayBaseVlm   string   `json:"dayBaseVlm,omitempty"`
+}
+
+// MetaAndAssetCtxsParams contains optional parameters for MetaAndAssetCtxs request
+type MetaAndAssetCtxsParams struct {
+	// Dex specifies the DEX to query. If nil or empty string, queries the default (first) perp dex.
+	Dex *string
 }
 
 // This type has no JSON annotation because it cannot be directly unmarshalled from the response
@@ -236,8 +247,10 @@ type MarginSummary struct {
 
 type OpenOrder struct {
 	Coin      string  `json:"coin"`
+	Cloid     *string `json:"cloid,omitempty"`
 	LimitPx   float64 `json:"limitPx,string"`
 	Oid       int64   `json:"oid"`
+	OrigSz    float64 `json:"origSz,string"`
 	Side      string  `json:"side"`
 	Size      float64 `json:"sz,string"`
 	Timestamp int64   `json:"timestamp"`
@@ -384,6 +397,11 @@ type Fill struct {
 	Tid           int64  `json:"tid"`
 }
 
+type UserFillsParams struct {
+	Address         string
+	AggregateByTime *bool
+}
+
 type FundingHistory struct {
 	Coin        string `json:"coin"`
 	FundingRate string `json:"fundingRate"`
@@ -392,10 +410,31 @@ type FundingHistory struct {
 }
 
 type UserFundingHistory struct {
-	User      string `json:"user"`
-	Type      string `json:"type"`
-	StartTime int64  `json:"startTime"`
-	EndTime   int64  `json:"endTime"`
+	Delta Delta  `json:"delta"`
+	Hash  string `json:"hash"`
+	Time  int64  `json:"time"`
+}
+
+type Delta struct {
+	Coin        string `json:"coin"`
+	FundingRate string `json:"fundingRate"`
+	Size        string `json:"size"`
+	Type        string `json:"type"`
+	USDC        string `json:"usdc"`
+}
+
+type UserNonFundingLedgerUpdates struct {
+	Delta LedgerDelta `json:"delta"`
+	Hash  string      `json:"hash"`
+	Time  int64       `json:"time"`
+}
+
+type LedgerDelta struct {
+	Type        string `json:"type"`
+	USDC        string `json:"usdc"`
+	User        string `json:"user"`
+	Destination string `json:"destination"`
+	Fee         string `json:"fee"`
 }
 
 type UserFees struct {
@@ -600,6 +639,16 @@ func (r *ScheduleCancelResponse) GetError() string {
 	return r.Error
 }
 
+// ReserveResponseData represents the parsed success data from a reserve request weight action.
+type ReserveResponseData struct {
+	Type string `json:"type"`
+}
+type ReserveRequestWeightResponse struct {
+	Status   string               `json:"status"`
+	Response *ReserveResponseData `json:"response,omitempty"`
+	Error    string               `json:"error,omitempty"`
+}
+
 type AgentApprovalResponse struct {
 	Status   string `json:"status"`
 	TxHash   string `json:"txHash,omitempty"`
@@ -677,7 +726,9 @@ func (r *MultiSigResponse) GetError() string {
 
 type PerpDeployResponse struct {
 	Status string `json:"status"`
-	Data   struct {
+	// Response is either a string or object `{"type": "...", ...}`
+	Response json.RawMessage `json:"response,omitempty"`
+	Data     struct {
 		Statuses []TxStatus `json:"statuses"`
 	} `json:"data"`
 }
@@ -710,3 +761,46 @@ type TokenDetailGenesis struct {
 	UserBalances          [][]string   `json:"userBalances"`
 	ExistingTokenBalances []MixedArray `json:"existingTokenBalances"`
 }
+
+// PerpDex represents a perpetual DEX
+type PerpDex struct {
+	Name                     string     `json:"name"`
+	FullName                 string     `json:"fullName"`
+	Deployer                 string     `json:"deployer"`
+	OracleUpdater            *string    `json:"oracleUpdater"`
+	FeeRecipient             *string    `json:"feeRecipient"`
+	AssetToStreamingOiCap    [][]string `json:"assetToStreamingOiCap"`    // Array of [coin, cap] tuples
+	AssetToFundingMultiplier [][]string `json:"assetToFundingMultiplier"` // Array of [coin, multiplier] tuples
+}
+
+// PerpDexLimits represents limits for a builder-deployed perp DEX
+type PerpDexLimits struct {
+	TotalOiCap     string     `json:"totalOiCap"`
+	OiSzCapPerPerp string     `json:"oiSzCapPerPerp"`
+	MaxTransferNtl string     `json:"maxTransferNtl"`
+	CoinToOiCap    [][]string `json:"coinToOiCap"` // Array of [coin, cap] tuples
+}
+
+// PerpDexStatus represents status for a builder-deployed perp DEX
+type PerpDexStatus struct {
+	TotalNetDeposit string `json:"totalNetDeposit"`
+}
+
+// PerpDeployAuctionStatus represents the status of a perp deploy auction
+type PerpDeployAuctionStatus struct {
+	StartTimeSeconds int64   `json:"startTimeSeconds"`
+	DurationSeconds  int64   `json:"durationSeconds"`
+	StartGas         string  `json:"startGas"`
+	CurrentGas       string  `json:"currentGas"`
+	EndGas           *string `json:"endGas"`
+}
+
+// AccountHistory represents historical portfolio data for a specific time range
+type AccountHistory struct {
+	AccountValueHistory []MixedArray `json:"accountValueHistory"` // [timestamp, value]
+	PnlHistory          []MixedArray `json:"pnlHistory"`          // [timestamp, value]
+	Vlm                 string       `json:"vlm"`
+}
+
+// Portfolio represents a user's portfolio
+type Portfolio []MixedValue // [string, AccountHistory]
