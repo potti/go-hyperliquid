@@ -782,7 +782,7 @@ func (e *Exchange) WithdrawFromBridge(
 ) (*TransferResponse, error) {
 	nonce := e.nextNonce()
 
-	signAction, action := buildWithdrawFromBridgeActions(amount, destination, nonce)
+	action := buildWithdrawFromBridgeAction(amount, destination, nonce)
 
 	payloadTypes := []apitypes.Type{
 		{Name: "hyperliquidChain", Type: "string"},
@@ -793,7 +793,7 @@ func (e *Exchange) WithdrawFromBridge(
 
 	sig, err := e.signUserSignedAction(
 		ctx,
-		signAction,
+		action,
 		payloadTypes,
 		"HyperliquidTransaction:Withdraw",
 		e.client.baseURL == MainnetAPIURL,
@@ -814,20 +814,13 @@ func (e *Exchange) WithdrawFromBridge(
 	return &result, nil
 }
 
-func buildWithdrawFromBridgeActions(amount float64, destination string, nonce int64) (map[string]any, map[string]any) {
-	signAction := map[string]any{
+func buildWithdrawFromBridgeAction(amount float64, destination string, nonce int64) map[string]any {
+	return map[string]any{
 		"destination": destination,
 		"amount":      formatFloat(amount),
 		"time":        big.NewInt(nonce),
 		"type":        "withdraw3",
 	}
-	action := map[string]any{
-		"destination": destination,
-		"amount":      amount,
-		"time":        big.NewInt(nonce),
-		"type":        "withdraw3",
-	}
-	return signAction, action
 }
 
 // ApproveAgent approves an agent to trade on behalf of the user

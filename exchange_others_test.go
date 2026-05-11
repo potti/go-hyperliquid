@@ -5,24 +5,49 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/sonirico/vago/ent"
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuildWithdrawFromBridgeActionsSerializesAmountAsNumber(t *testing.T) {
-	signAction, action := buildWithdrawFromBridgeActions(
+func TestWithdrawFromBridgeActionMatchesExchangeSchema(t *testing.T) {
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+
+	nonce := int64(123456789)
+	action := buildWithdrawFromBridgeAction(
 		198.34,
 		"0xABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD",
-		123456789,
+		nonce,
 	)
 
-	require.Equal(t, "198.340000", signAction["amount"])
-	require.Equal(t, 198.34, action["amount"])
-
-	body, err := json.Marshal(map[string]any{"action": action})
+	payloadTypes := []apitypes.Type{
+		{Name: "hyperliquidChain", Type: "string"},
+		{Name: "destination", Type: "string"},
+		{Name: "amount", Type: "string"},
+		{Name: "time", Type: "uint64"},
+	}
+	signature, err := SignUserSignedAction(
+		privateKey,
+		action,
+		payloadTypes,
+		"HyperliquidTransaction:Withdraw",
+		true,
+	)
 	require.NoError(t, err)
-	require.Contains(t, string(body), `"amount":198.34`)
-	require.NotContains(t, string(body), `"amount":"198.34"`)
+
+	body, err := json.Marshal(map[string]any{
+		"action":    action,
+		"nonce":     nonce,
+		"signature": signature,
+	})
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"type":"withdraw3"`)
+	require.Contains(t, string(body), `"signatureChainId":"0x66eee"`)
+	require.Contains(t, string(body), `"hyperliquidChain":"Mainnet"`)
+	require.Contains(t, string(body), `"amount":"198.340000"`)
+	require.NotContains(t, string(body), `"amount":198.34`)
 }
 
 func setupExchange(t *testing.T) *Exchange {
